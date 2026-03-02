@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 class Graph:
     def __init__(self):
         self.graph = {}
@@ -26,3 +27,6 @@ class Graph:
 
     def get_neighbors(self, node):
         return self.graph.get(node, [])
+=======
+
+>>>>>>> a37d40f0a48661abc9c486297e1c5862c58273c2
