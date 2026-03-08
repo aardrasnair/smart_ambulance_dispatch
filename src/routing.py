@@ -1,5 +1,5 @@
-<<<<<<< HEAD
 import heapq
+import time
 
 def dijkstra(graph_obj, start):
     graph = graph_obj.graph
@@ -15,7 +15,8 @@ def dijkstra(graph_obj, start):
         if current_distance > distances[current_node]:
             continue
 
-        for neighbor, weight in graph[current_node]:
+        # Use dynamic neighbors with current traffic and signal weights
+        for neighbor, weight in graph_obj.get_dynamic_neighbors(current_node):
             distance = current_distance + weight
 
             if distance < distances[neighbor]:
@@ -39,6 +40,27 @@ def reconstruct_path(previous, start, target):
     if path[0] == start:
         return path
     return []
-=======
 
->>>>>>> a37d40f0a48661abc9c486297e1c5862c58273c2
+
+def simulate_traffic_changes(graph_obj):
+    """Simulate random traffic changes for demonstration"""
+    import random
+    current_time = time.time()
+    
+    for edge_key in graph_obj.traffic_density:
+        if random.random() < 0.1:  # 10% chance of traffic change
+            # Random traffic density between 0.5 (light) and 2.5 (heavy)
+            new_density = random.uniform(0.5, 2.5)
+            graph_obj.traffic_density[edge_key] = new_density
+    
+    # Update traffic signal phases
+    for edge_key, signal in graph_obj.traffic_signals.items():
+        if signal and signal is not None:
+            elapsed = current_time - signal['phase_start']
+            
+            if signal['current_phase'] == 'green' and elapsed >= signal['green_time']:
+                signal['current_phase'] = 'red'
+                signal['phase_start'] = current_time
+            elif signal['current_phase'] == 'red' and elapsed >= (signal['cycle_time'] - signal['green_time']):
+                signal['current_phase'] = 'green'
+                signal['phase_start'] = current_time
