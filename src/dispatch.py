@@ -46,11 +46,10 @@ def resolve_conflict(hospital_system, location, severity, rankings):
     return None, "No suitable hospital available"
 
 
-def assign_ambulance(graph, ambulances, patient_location, hospital_system=None, severity=None):
+def assign_ambulance(graph, ambulances, patient_location, hospital_system=None, severity=None, target_hospital=None):
     best_time = float('inf')
     best_ambulance = None
     best_path = []
-    target_hospital = None
     conflict_info = None
 
     for ambulance in ambulances:
@@ -63,37 +62,48 @@ def assign_ambulance(graph, ambulances, patient_location, hospital_system=None, 
 
     # If hospital system is provided, find best hospital
     if hospital_system and severity:
-        from src.ui import HospitalRanker
-        rankings = HospitalRanker.rank_hospitals(patient_location, severity, hospital_system, graph)
-        
-        if rankings:
-            # Try to assign to best hospital
-            target_hospital, total_time, doctor_info = rankings[0]
+        if not target_hospital:
+            from src.ui import HospitalRanker
+            rankings = HospitalRanker.rank_hospitals(patient_location, severity, hospital_system, graph)
             
+            if rankings:
+                # Try to assign to best hospital
+                target_hospital, total_time, doctor_info = rankings[0]
+            else:
+                return best_ambulance, best_time, best_path, None, None, "No suitable hospitals available"
+        else:
+            # Manually selected hospital
+            hospital_distances, _ = dijkstra(graph, patient_location)
+            hospital_time = hospital_distances.get(target_hospital.location, float('inf'))
+            total_time = best_time + hospital_time
+            rankings = [] # No rankings needed for manual selection
+        
+        if target_hospital:
             # Check for doctor availability conflicts
             conflict = check_doctor_conflict(target_hospital, severity)
             
             if conflict:
-                # Try to resolve conflict
-                resolved_hospital, resolution_info = resolve_conflict(
-                    hospital_system, patient_location, severity, rankings
-                )
-                
-                if resolved_hospital:
-                    target_hospital = resolved_hospital
-                    conflict_info = resolution_info
+                # Try to resolve conflict if it wasn't manually selected
+                # Or just report it if it was manually selected?
+                # Usually if user selects it, we should still check.
+                if rankings: # Came from automatic selection
+                    resolved_hospital, resolution_info = resolve_conflict(
+                        hospital_system, patient_location, severity, rankings
+                    )
                     
-                    # Calculate new total time
-                    hospital_distances, _ = dijkstra(graph, patient_location)
-                    new_hospital_time = hospital_distances.get(resolved_hospital.location, float('inf'))
-                    total_time = best_time + new_hospital_time
+                    if resolved_hospital:
+                        target_hospital = resolved_hospital
+                        conflict_info = resolution_info
+                        
+                        # Calculate new total time
+                        hospital_distances, _ = dijkstra(graph, patient_location)
+                        new_hospital_time = hospital_distances.get(resolved_hospital.location, float('inf'))
+                        total_time = best_time + new_hospital_time
+                    else:
+                        return best_ambulance, best_time, best_path, None, None, f"CONFLICT: {conflict}"
                 else:
-                    return best_ambulance, best_time, best_path, None, None, f"CONFLICT: {conflict}"
-            else:
-                # No conflict, proceed normally
-                hospital_distances, _ = dijkstra(graph, patient_location)
-                hospital_time = hospital_distances.get(target_hospital.location, float('inf'))
-                total_time = best_time + hospital_time
+                    # Manually selected, just report conflict
+                    return best_ambulance, total_time, best_path, None, None, f"CONFLICT: {conflict}"
             
             # Try to assign patient to doctor
             assigned_doctor = target_hospital.assign_patient_to_doctor(f"Patient_{patient_location}", severity)
@@ -102,8 +112,6 @@ def assign_ambulance(graph, ambulances, patient_location, hospital_system=None, 
                 return best_ambulance, total_time, best_path, target_hospital, assigned_doctor, conflict_info
             else:
                 return best_ambulance, total_time, best_path, None, None, "Failed to assign doctor"
-        else:
-            return best_ambulance, best_time, best_path, None, None, "No suitable hospitals available"
 
     return best_ambulance, best_time, best_path, target_hospital, None, conflict_info
 

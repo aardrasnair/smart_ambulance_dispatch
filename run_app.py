@@ -113,6 +113,18 @@ class InteractiveDispatchSystem:
     
     def run(self):
         """Main application loop"""
+        self.ui.clear_screen()
+        self.ui.display_header()
+        
+        print(f"{Colors.GREEN}Welcome to the Smart Ambulance Dispatch System!{Colors.END}")
+        print("This tool helps dispatchers find the best hospital for patients based on:")
+        print(" - 🚑 Real-time ambulance travel times")
+        print(" - 🚥 Current city traffic and signal conditions")
+        print(" - 🏥 Hospital bed capacity and doctor availability")
+        print(" - 🩺 Patient Injury Severity Score (ISS)")
+        print()
+        input(f"{Colors.YELLOW}Press Enter to start the system...{Colors.END}")
+        
         while self.running:
             try:
                 self.ui.clear_screen()
@@ -174,17 +186,17 @@ class InteractiveDispatchSystem:
         
         if selected_hospital:
             # Assign ambulance and dispatch
-            ambulance, total_time, route, hospital, doctor = assign_ambulance(
+            ambulance, total_time, route, hospital, doctor, conflict_info = assign_ambulance(
                 self.city, self.ambulances, patient_location, 
-                self.hospital_system, severity
+                self.hospital_system, severity, target_hospital=selected_hospital
             )
             
             if hospital and doctor:
                 self.ui.display_dispatch_result(
-                    ambulance, route, total_time, hospital, doctor, iss_score
+                    ambulance, route, total_time, hospital, doctor, iss_score, conflict_info
                 )
             else:
-                self.ui.display_error("Unable to complete dispatch - no available resources.")
+                self.ui.display_error(f"Unable to complete dispatch - {conflict_info if conflict_info else 'no available resources.'}")
         else:
             self.ui.display_error("Dispatch cancelled.")
         

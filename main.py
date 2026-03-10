@@ -101,18 +101,20 @@ def main():
     for location, severity in prioritized_patients:
         print(f"Dispatching to {location} - Severity: {severity.name}")
         
-        ambulance, time_taken, path, hospital, doctor = assign_ambulance(
+        ambulance, time_taken, path, hospital, doctor, conflict_info = assign_ambulance(
             city, ambulances, location, hospital_system, severity
         )
         
         if hospital and doctor:
+            if conflict_info:
+                print(f"  Note: {conflict_info}")
             print(f"  Ambulance {ambulance} assigned")
             print(f"  Route: {' -> '.join(path)}")
             print(f"  Total Time: {time_taken:.1f} units (to hospital)")
             print(f"  Hospital: {hospital.name}")
             print(f"  Doctor: {doctor}")
         else:
-            print(f"  No suitable hospital/doctor available for {severity.name} case")
+            print(f"  Error: {conflict_info if conflict_info else 'No suitable hospital/doctor available'}")
             print(f"  Ambulance {ambulance} assigned (transport only)")
             print(f"  Route: {' -> '.join(path)}")
             print(f"  Time: {time_taken:.1f} units")
@@ -162,7 +164,7 @@ def demonstrate_redirection(city, hospital_system, ambulances):
     severity = PatientSeverity.CRITICAL
     
     print(f"Critical patient at {patient_location} needs hospital:")
-    ambulance, time_taken, path, hospital, doctor = assign_ambulance(
+    ambulance, time_taken, path, hospital, doctor, conflict_info = assign_ambulance(
         city, ambulances, patient_location, hospital_system, severity
     )
     
@@ -186,7 +188,7 @@ def demonstrate_scenarios(city, hospital_system, ambulances):
     for edge_key in city.traffic_density:
         city.traffic_density[edge_key] = min(city.traffic_density[edge_key] * 1.5, 3.0)
     
-    ambulance, time_taken, path, hospital, doctor = assign_ambulance(
+    ambulance, time_taken, path, hospital, doctor, conflict_info = assign_ambulance(
         city, ambulances, "E", hospital_system, PatientSeverity.URGENT
     )
     print(f"  Rush hour - Ambulance: {ambulance}, Time: {time_taken:.1f}, Hospital: {hospital.name if hospital else 'None'}")
@@ -196,7 +198,7 @@ def demonstrate_scenarios(city, hospital_system, ambulances):
     for edge_key in city.traffic_density:
         city.traffic_density[edge_key] = 0.5
     
-    ambulance, time_taken, path, hospital, doctor = assign_ambulance(
+    ambulance, time_taken, path, hospital, doctor, conflict_info = assign_ambulance(
         city, ambulances, "E", hospital_system, PatientSeverity.MODERATE
     )
     print(f"  Clear roads - Ambulance: {ambulance}, Time: {time_taken:.1f}, Hospital: {hospital.name if hospital else 'None'}")
