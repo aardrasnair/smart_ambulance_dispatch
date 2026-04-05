@@ -5,7 +5,7 @@
 MediRush is a smart ambulance dispatch application with two distinct layers:
 
 1. **Dispatch Engine** — a Python CLI/simulation system that models city routing, hospital selection, and conflict resolution using graph algorithms.
-2. **Web Application** — a full-stack Node.js + vanilla JS app that lets end-users book ambulances, view history, and manage their medical profile.
+2. **Web Application** — a full-stack Python (Flask) + vanilla JS app that lets end-users book ambulances, view history, and manage their medical profile.
 
 ---
 
@@ -23,17 +23,18 @@ smart_ambulance_dispatch/
 │
 ├── run_app.py                # Interactive CLI entry point
 ├── main.py                   # Automated CLI demonstration
+├── requirements.txt          # Python dependencies (all layers)
 │
-├── backend/                  # Node.js REST API
-│   ├── server.js             # Express app + static file serving
-│   ├── db.js                 # SQLite database layer (sql.js / WebAssembly)
+├── backend/                  # Flask REST API
+│   ├── app.py                # Flask app + static file serving
+│   ├── db.py                 # SQLite database layer (stdlib sqlite3)
 │   ├── .env                  # Environment config (port, JWT secret, SMTP)
 │   ├── middleware/
-│   │   └── auth.js           # JWT verification middleware
+│   │   └── auth.py           # JWT verification decorator
 │   └── routes/
-│       ├── auth.js           # Register, OTP verify, complete-profile, login
-│       ├── user.js           # User profile read/update
-│       └── bookings.js       # Booking creation and history
+│       ├── auth.py           # Register, OTP verify, complete-profile, login
+│       ├── user.py           # User profile read/update
+│       └── bookings.py       # Booking creation and history
 │
 ├── frontend/                 # Vanilla HTML/CSS/JS web app
 │   ├── shared.css            # Design system (tokens, cards, forms, buttons)
@@ -104,24 +105,24 @@ Browser
   │
   │  HTTP (same origin)
   ▼
-Express (backend/server.js, port 3001)
+Flask (backend/app.py, port 3001)
   ├── Static files  → frontend/
-  ├── /api/auth/*   → routes/auth.js
-  ├── /api/user/*   → routes/user.js
-  └── /api/bookings/* → routes/bookings.js
+  ├── /api/auth/*   → routes/auth.py
+  ├── /api/user/*   → routes/user.py
+  └── /api/bookings/* → routes/bookings.py
               │
               ▼
-         db.js (sql.js)
+         db.py (stdlib sqlite3)
               │
               ▼
        medirush.db  (SQLite file on disk)
 ```
 
-The backend serves the frontend as static files, so the entire app runs on a single port with no CORS configuration needed.
+The backend serves the frontend as static files, so the entire app runs on a single port with no CORS configuration needed in production.
 
-### Database (`backend/db.js`)
+### Database (`backend/db.py`)
 
-SQLite via **sql.js** (pure WebAssembly — no native compilation required). The database runs in memory and is flushed to `backend/medirush.db` after every write, producing a standard SQLite binary that any SQLite client can open.
+SQLite via Python's built-in **sqlite3** module. WAL journal mode is enabled for better concurrent read performance.
 
 **Tables:**
 
@@ -136,7 +137,7 @@ SQLite via **sql.js** (pure WebAssembly — no native compilation required). The
 
 ```
 Register (step 1)  →  POST /api/auth/register
-                       Hash password, create unverified user, generate OTP,
+                       Hash password (bcrypt), create unverified user, generate OTP,
                        send email (or print to console if SMTP not set)
 
 OTP verify (step 2) → POST /api/auth/verify-otp
@@ -149,7 +150,7 @@ Login              →  POST /api/auth/login
                        Verify password (bcrypt), return JWT (7-day expiry)
 ```
 
-JWT is stored in `localStorage` on the client. All authenticated routes require an `Authorization: Bearer <token>` header, verified by `middleware/auth.js`.
+JWT is stored in `localStorage` on the client. All authenticated routes require an `Authorization: Bearer <token>` header, verified by `middleware/auth.py` (`@require_auth` decorator).
 
 ### API endpoints
 
@@ -178,7 +179,7 @@ Two HTML pages driven by vanilla JavaScript — no build step, no framework.
 
 | Section | Behaviour |
 |---------|-----------|
-| **Book** | The full `medirush-v3.html` booking flow (Who & Where → Emergency type → Confirm → Dispatched). Name and phone are pre-filled from the user's profile. Submission POSTs to `/api/bookings`. |
+| **Book** | The full booking flow (Who & Where → Emergency type → Confirm → Dispatched). Name and phone are pre-filled from the user's profile. Submission POSTs to `/api/bookings`. |
 | **History** | GETs `/api/bookings` and renders a card list of past requests. |
 | **Preferences** | GETs `/api/user/profile` and lets the user edit personal info and medical data. Saves via PUT `/api/user/profile`. |
 
@@ -186,7 +187,7 @@ Two HTML pages driven by vanilla JavaScript — no build step, no framework.
 
 ### GPS tracking placeholder
 
-The booking confirmation screen (screen 4 in the Book section) contains a clearly marked placeholder card:
+The booking confirmation screen contains a clearly marked placeholder:
 
 ```html
 <!-- ── GPS TRACKING PLACEHOLDER ────────────────────────────────────────
@@ -203,14 +204,15 @@ The booking confirmation screen (screen 4 in the Book section) contains a clearl
 
 ```bash
 # Install dependencies
-cd backend && npm install
+pip install -r requirements.txt
 
 # Start server (initialises SQLite, then listens)
-node server.js
+cd backend
+python app.py
 # → http://localhost:3001
-
-# OTPs print to console in development (no SMTP configured)
 ```
+
+OTPs print to console in development (no SMTP configured).
 
 To enable email OTPs, set these in `backend/.env`:
 ```
@@ -233,8 +235,8 @@ python3 main.py       # automated demo
 
 | Feature | Where to add |
 |---------|-------------|
-| Live GPS tracking | Replace `gps-placeholder` div in `frontend/app.html` with a Leaflet/Google Maps component; add a WebSocket or SSE endpoint to `backend/server.js` |
-| Push notifications | Add a `notifications` table; hook into booking creation in `routes/bookings.js` |
-| Admin / dispatcher view | New frontend page + new Express router; reuse `middleware/auth.js` with a role field added to `users` |
-| Real dispatch integration | Call the Python engine via a child process or rewrite the core algorithms in JS and expose them as an Express route |
-| PostgreSQL / MySQL | Replace `db.js` with a `pg` or `mysql2` client; SQL is standard and routes need no changes |
+| Live GPS tracking | Replace `gps-placeholder` div in `frontend/app.html` with a Leaflet/Google Maps component; add a WebSocket or SSE endpoint to `backend/app.py` |
+| Push notifications | Add a `notifications` table; hook into booking creation in `routes/bookings.py` |
+| Admin / dispatcher view | New frontend page + new Flask blueprint; reuse `middleware/auth.py` with a role field added to `users` |
+| Real dispatch integration | Call the Python engine directly from `routes/bookings.py` (same process) or expose it as a dedicated `/api/dispatch` endpoint |
+| PostgreSQL / MySQL | Replace `db.py` with `psycopg2` or `mysql-connector-python`; SQL is standard and routes need no changes |
