@@ -1,6 +1,11 @@
+"""
+hospital_models.py — Hospital data models for backend use.
+
+Copied from src/hospital.py to avoid import issues.
+"""
+
 from enum import Enum
 from typing import List, Dict, Optional, Tuple
-
 
 class PatientSeverity(Enum):
     CRITICAL = 1    # Life-threatening, immediate attention required
@@ -8,14 +13,12 @@ class PatientSeverity(Enum):
     MODERATE = 3    # Requires medical attention but can wait
     MILD = 4        # Minor injuries/conditions
 
-
 class DoctorSpecialty(Enum):
     EMERGENCY = "Emergency Medicine"
     TRAUMA = "Trauma Surgery"
     CARDIOLOGY = "Cardiology"
     GENERAL = "General Practice"
     ORTHOPEDIC = "Orthopedic Surgery"
-
 
 class Doctor:
     def __init__(self, id: str, name: str, specialty: DoctorSpecialty, available: bool = True):
@@ -43,7 +46,6 @@ class Doctor:
     def __str__(self):
         status = "Available" if self.available else f"Busy (Patient: {self.current_patient})"
         return f"Dr. {self.name} ({self.specialty.value}) - {status}"
-
 
 class Hospital:
     def __init__(self, id: str, name: str, location: str, capacity: int, gps_coordinates: Tuple[float, float] = None):
@@ -112,89 +114,21 @@ class Hospital:
     
     def _get_treatment_time(self, severity: PatientSeverity) -> int:
         """Get estimated treatment time based on severity"""
+        # Treatment time in simulation steps (each step = 1 minute)
         if severity == PatientSeverity.CRITICAL:
-            return 30  # 30 time units
+            return 120  # 2 hours
         elif severity == PatientSeverity.URGENT:
-            return 20
+            return 60   # 1 hour
         elif severity == PatientSeverity.MODERATE:
-            return 15
+            return 30   # 30 minutes
         else:  # MILD
-            return 10
+            return 15   # 15 minutes
     
     def update_all_doctors(self):
         """Update availability of all doctors"""
         for doctor in self.doctors.values():
             doctor.update_availability()
     
-    def get_bed_availability(self) -> int:
-        """Get number of available beds"""
-        return self.capacity - self.current_patients
-    
     def __str__(self):
-        available_doctors = len([d for d in self.doctors.values() if d.available])
-        return (f"{self.name} ({self.location}) - Beds: {self.get_bed_availability()}/{self.capacity}, "
-                f"Available Doctors: {available_doctors}/{len(self.doctors)}")
-
-
-class HospitalSystem:
-    def __init__(self):
-        self.hospitals: Dict[str, Hospital] = {}
-    
-    def add_hospital(self, hospital: Hospital):
-        """Add a hospital to the system"""
-        self.hospitals[hospital.id] = hospital
-    
-    def find_best_hospital(self, patient_location: str, severity: PatientSeverity, 
-                          graph, max_distance: float = float('inf')) -> Optional[Hospital]:
-        """Find the best hospital for a patient based on availability and distance"""
-        suitable_hospitals = []
-        
-        for hospital in self.hospitals.values():
-            if hospital.can_accept_patient(severity):
-                # Calculate distance from patient location to hospital
-                try:
-                    from src.routing import dijkstra
-                    distances, _ = dijkstra(graph, patient_location)
-                    distance = distances.get(hospital.location, float('inf'))
-                    
-                    if distance <= max_distance:
-                        suitable_hospitals.append((hospital, distance))
-                except:
-                    # If graph routing fails, use hospital directly
-                    suitable_hospitals.append((hospital, 0))
-        
-        if not suitable_hospitals:
-            return None
-        
-        # Sort by distance (closest first) then by availability
-        suitable_hospitals.sort(key=lambda x: (x[1], -x[0].get_bed_availability()))
-        return suitable_hospitals[0][0]
-    
-    def redirect_to_next_hospital(self, patient_location: str, severity: PatientSeverity,
-                                 excluded_hospital_id: str, graph) -> Optional[Hospital]:
-        """Find next best hospital excluding a specific hospital"""
-        suitable_hospitals = []
-        
-        for hospital in self.hospitals.values():
-            if (hospital.id != excluded_hospital_id and 
-                hospital.can_accept_patient(severity)):
-                try:
-                    from src.routing import dijkstra
-                    distances, _ = dijkstra(graph, patient_location)
-                    distance = distances.get(hospital.location, float('inf'))
-                    suitable_hospitals.append((hospital, distance))
-                except:
-                    suitable_hospitals.append((hospital, 0))
-        
-        if not suitable_hospitals:
-            return None
-        
-        suitable_hospitals.sort(key=lambda x: x[1])
-        return suitable_hospitals[0][0]
-    
-    def get_system_status(self) -> str:
-        """Get overall system status"""
-        status = "=== Hospital System Status ===\n"
-        for hospital in self.hospitals.values():
-            status += f"{hospital}\n"
-        return status
+        available_doctors = len(self.get_available_doctors())
+        return f"{self.name} ({self.location}) - {self.current_patients}/{self.capacity} patients, {available_doctors} doctors available"
