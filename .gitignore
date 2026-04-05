@@ -40,3 +40,9 @@ desktop.ini
 
 # Logs
 *.log
+
+# GeoJSON source (too large for git)
+*.osm.geojson
+
+# Generated data files
+data/

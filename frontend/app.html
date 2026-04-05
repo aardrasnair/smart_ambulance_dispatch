@@ -6,6 +6,8 @@
 <title>MediRush — Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="shared.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 /* ── Top Navigation ────────────────────────────────────────────────────────── */
 .topnav {
@@ -198,16 +200,37 @@
 .tl-time  { font-size: 11px; color: var(--green); font-weight: 600; margin-top: 1px; }
 .tl.pend .tl-time { color: var(--light); }
 
-/* GPS tracking placeholder */
-.gps-placeholder {
-  background: var(--surface); border: 2px dashed var(--border);
-  border-radius: var(--radius); padding: 28px 20px; margin-bottom: 12px;
-  text-align: center;
+/* Location picker map (S1) */
+#loc-picker-map { z-index: 1; }
+#loc-picker-map .leaflet-container { border-radius: 9px; }
+
+/* Live dispatch map (replaces GPS placeholder) */
+#dispatch-map {
+  width: 100%; height: 350px; border-radius: var(--radius);
+  border: 1px solid var(--border); margin-bottom: 12px;
 }
-.gps-placeholder-icon { font-size: 40px; margin-bottom: 10px; }
-.gps-placeholder-title { font-family: 'DM Serif Display', serif; font-size: 18px; margin-bottom: 6px; color: var(--mid); }
-.gps-placeholder-sub   { font-size: 13px; color: var(--light); line-height: 1.5; max-width: 280px; margin: 0 auto; }
-.gps-placeholder-badge { display: inline-block; margin-top: 10px; font-size: 11px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; background: var(--blue-bg); color: var(--blue); border: 1px solid #cce0ff; padding: 4px 10px; border-radius: 20px; }
+.map-result {
+  background: var(--green-bg); border: 1px solid #b2ead8; border-radius: 10px;
+  padding: 14px; margin-bottom: 12px;
+}
+.map-result h4 { font-size: 14px; color: #007a5e; margin-bottom: 8px; }
+.map-result-row { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; }
+.map-result-row .mr-label { color: var(--mid); }
+.map-result-row .mr-value { font-weight: 600; }
+.map-legend { display: flex; gap: 16px; margin-bottom: 12px; font-size: 12px; color: var(--mid); }
+.map-legend-item { display: flex; align-items: center; gap: 5px; }
+.map-legend-swatch { width: 20px; height: 3px; border-radius: 2px; }
+.pulse-marker {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--red); border: 3px solid white;
+  box-shadow: 0 0 0 0 rgba(214,48,49,.5);
+  animation: pulse-ring 1.5s ease-out infinite;
+}
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(214,48,49,.5); }
+  100% { box-shadow: 0 0 0 16px rgba(214,48,49,0); }
+}
+.amb-icon-marker { font-size: 22px; line-height: 1; filter: drop-shadow(0 1px 3px rgba(0,0,0,.3)); }
 
 /* Advice + call-direct */
 .advice { background: #fffbf0; border: 1px solid #ffe8a0; border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
@@ -249,7 +272,7 @@
 </head>
 <body>
 
-<div class="banner">🚨 Life-threatening? Call <a href="tel:112">112</a> — don't wait.</div>
+<div class="banner">🚨 Life-threatening? Call <a href="tel:108">108</a> — don't wait.</div>
 
 <!-- ── Top Navigation ────────────────────────────────────────────────────────── -->
 <nav class="topnav">
@@ -305,12 +328,14 @@
         </div>
         <div class="fg">
           <div class="fl">📍 Location</div>
-          <div style="font-size:11px;color:var(--light);margin-bottom:6px;">Building name, floor, landmark — be specific.</div>
-          <div class="loc-row">
-            <input class="fi" id="f-loc" type="text" placeholder="e.g. 45 MG Road, 3rd Floor, Koramangala" autocomplete="street-address">
-            <button class="gps-btn" onclick="detectLoc()">📡 GPS</button>
+          <div style="font-size:11px;color:var(--light);margin-bottom:6px;">Type a road name to search, or click on the map to set your location.</div>
+          <div style="position:relative;">
+            <input class="fi" id="f-loc-search" type="text" placeholder="Search road name, e.g. Anna Salai" autocomplete="off" style="margin-bottom:4px;">
+            <div id="loc-suggestions" style="position:absolute;top:100%;left:0;right:0;z-index:999;background:white;border:1px solid var(--border);border-radius:0 0 9px 9px;max-height:160px;overflow-y:auto;display:none;box-shadow:0 4px 12px rgba(0,0,0,.1);"></div>
           </div>
-          <div class="ferr" id="e-loc">Please enter your location.</div>
+          <div id="loc-picker-map" style="width:100%;height:260px;border-radius:9px;border:1.5px solid var(--border);margin-bottom:8px;"></div>
+          <input class="fi" id="f-loc" type="text" placeholder="← Click the map or search above" readonly style="font-size:13px;color:var(--mid);">
+          <div class="ferr" id="e-loc">Please select your location on the map.</div>
         </div>
         <div class="btn-row">
           <button class="btn-primary" onclick="toS2()">Continue →</button>
@@ -459,17 +484,13 @@
         </div>
       </div>
 
-      <!-- ── GPS TRACKING PLACEHOLDER ────────────────────────────────────────
-           TODO: Replace this card with a live map component (e.g. Leaflet.js
-           or Google Maps) that subscribes to a WebSocket/SSE stream from the
-           backend, showing the ambulance's real-time GPS position.
-      ─────────────────────────────────────────────────────────────────────── -->
-      <div class="gps-placeholder">
-        <div class="gps-placeholder-icon">🗺️</div>
-        <div class="gps-placeholder-title">Live GPS Tracking</div>
-        <div class="gps-placeholder-sub">Real-time map tracking for your ambulance will appear here once the GPS module is integrated.</div>
-        <div class="gps-placeholder-badge">Coming Soon</div>
+      <!-- Live dispatch map -->
+      <div class="map-legend">
+        <div class="map-legend-item"><div class="map-legend-swatch" style="background:#0066cc;"></div> Ambulance to You</div>
+        <div class="map-legend-item"><div class="map-legend-swatch" style="background:#00b894;"></div> You to Hospital</div>
       </div>
+      <div id="dispatch-map"></div>
+      <div id="map-result-container"></div>
 
       <div class="advice">
         <div class="advice-title">⚠️ While you wait</div>
@@ -482,7 +503,7 @@
         </ul>
       </div>
 
-      <a href="tel:112" class="call-direct">📞 Call Emergency Services Directly</a>
+      <a href="tel:108" class="call-direct">📞 Call Emergency Services Directly (108)</a>
 
       <div style="margin-top:14px;text-align:center">
         <button class="btn-secondary" onclick="resetBooking()" style="width:100%">Book Another Ambulance</button>
@@ -616,6 +637,7 @@ window.addEventListener('load', async () => {
   buildLevelGrid();
   await loadProfile();
   prefillBookingForm();
+  initLocationPicker();
 
   // Section routing via URL hash
   const initial = window.location.hash.slice(1) || 'book';
@@ -633,6 +655,7 @@ function navigate(section, skipHash) {
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.toggle('active', t.dataset.section === section));
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (section === 'book')        setTimeout(() => { if (locPickerMap) locPickerMap.invalidateSize(); }, 100);
   if (section === 'history')     loadHistory();
   if (section === 'preferences') loadPreferences();
 }
@@ -714,20 +737,121 @@ function toggleDesc() {
   icon.textContent = box.classList.toggle('show') ? '−' : '＋';
 }
 
-function detectLoc() {
-  const btn = document.querySelector('.gps-btn');
-  btn.textContent = '⏳'; btn.disabled = true;
-  if (!navigator.geolocation) {
-    btn.textContent = '📡 GPS'; btn.disabled = false;
-    alert('GPS not supported. Please type your address.'); return;
+// ── Location Picker Map ──────────────────────────────────────────────────────
+let locPickerMap = null;
+let locPickerMarker = null;
+
+async function initLocationPicker() {
+  const mapEl = document.getElementById('loc-picker-map');
+  if (!mapEl || locPickerMap) return;
+
+  // Fetch config for centre and bbox
+  let cfg;
+  try {
+    const res = await fetch('/api/map/config');
+    cfg = await res.json();
+  } catch { return; }
+
+  locPickerMap = L.map('loc-picker-map', { zoomControl: true }).setView(cfg.centre, 14);
+  let namedRoads = []; // for search
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OSM', maxZoom: 19,
+  }).addTo(locPickerMap);
+
+  // Load roads + build search index
+  try {
+    const roadsRes = await fetch('/api/map/roads');
+    const roadsGeo = await roadsRes.json();
+    L.geoJSON(roadsGeo, {
+      style: roadStyle,
+      onEachFeature: (f, layer) => {
+        if (f.properties.name) layer.bindTooltip(f.properties.name, { sticky: true, opacity: .85 });
+      }
+    }).addTo(locPickerMap);
+
+    // Build search index: unique named roads with their midpoint
+    const seen = new Set();
+    for (const f of roadsGeo.features) {
+      const name = f.properties.name;
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      const coords = f.geometry.coordinates;
+      const mid = coords[Math.floor(coords.length / 2)];
+      namedRoads.push({ name, lat: mid[1], lon: mid[0], type: f.properties.highway });
+    }
+    namedRoads.sort((a, b) => a.name.localeCompare(b.name));
+  } catch {}
+
+  // Hospital markers + add to search
+  for (const [id, h] of Object.entries(cfg.hospitals)) {
+    const icon = L.divIcon({
+      className: '',
+      html: '<div style="font-size:20px; filter:drop-shadow(0 1px 2px rgba(0,0,0,.3));">🏥</div>',
+      iconSize: [24, 24], iconAnchor: [12, 12],
+    });
+    L.marker([h.lat, h.lon], { icon }).addTo(locPickerMap)
+      .bindTooltip(h.name, { direction: 'top', offset: [0, -10] });
+    namedRoads.push({ name: h.name, lat: h.lat, lon: h.lon, type: 'hospital' });
   }
-  navigator.geolocation.getCurrentPosition(
-    p => {
-      document.getElementById('f-loc').value = `GPS: ${p.coords.latitude.toFixed(5)}, ${p.coords.longitude.toFixed(5)}`;
-      btn.innerHTML = '✅'; btn.disabled = false;
-    },
-    () => { btn.textContent = '📡 GPS'; btn.disabled = false; alert('Could not detect. Please type your address.'); }
-  );
+
+  // Wire up search input
+  const searchInput = document.getElementById('f-loc-search');
+  const sugBox = document.getElementById('loc-suggestions');
+
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.trim().toLowerCase();
+    if (q.length < 2) { sugBox.style.display = 'none'; return; }
+
+    const matches = namedRoads.filter(r => r.name.toLowerCase().includes(q)).slice(0, 8);
+    if (!matches.length) { sugBox.style.display = 'none'; return; }
+
+    sugBox.innerHTML = matches.map((r, i) =>
+      `<div style="padding:9px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center;" onmousedown="pickSearchResult(${r.lat},${r.lon},'${escHtml(r.name)}')" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='white'">
+        <span>${escHtml(r.name)}</span>
+        <span style="font-size:10px;color:var(--light);text-transform:capitalize;">${r.type}</span>
+      </div>`
+    ).join('');
+    sugBox.style.display = 'block';
+  });
+
+  searchInput.addEventListener('blur', () => {
+    setTimeout(() => { sugBox.style.display = 'none'; }, 200);
+  });
+
+  // Ambulance markers
+  for (const [id, a] of Object.entries(cfg.ambulances)) {
+    const icon = L.divIcon({
+      className: '',
+      html: '<div style="font-size:20px; filter:drop-shadow(0 1px 2px rgba(0,0,0,.3));">🚑</div>',
+      iconSize: [24, 24], iconAnchor: [12, 12],
+    });
+    L.marker([a.lat, a.lon], { icon }).addTo(locPickerMap)
+      .bindTooltip(id, { direction: 'top', offset: [0, -10] });
+  }
+
+  // Click to pick location
+  locPickerMap.on('click', (e) => {
+    const lat = e.latlng.lat, lon = e.latlng.lng;
+    const bbox = cfg.bbox;
+    if (lat < bbox.min_lat || lat > bbox.max_lat || lon < bbox.min_lon || lon > bbox.max_lon) {
+      showToast('Please click within the service area');
+      return;
+    }
+
+    if (locPickerMarker) locPickerMap.removeLayer(locPickerMarker);
+
+    const mIcon = L.divIcon({
+      className: '',
+      html: '<div class="pulse-marker"></div>',
+      iconSize: [18, 18], iconAnchor: [9, 9],
+    });
+    locPickerMarker = L.marker([lat, lon], { icon: mIcon }).addTo(locPickerMap);
+
+    document.getElementById('f-loc').value = `GPS: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+    document.getElementById('e-loc').classList.remove('show');
+    document.getElementById('f-loc').classList.remove('err');
+  });
 }
 
 // ── Booking validation ────────────────────────────────────────────────────────
@@ -797,11 +921,40 @@ async function submitBooking() {
   btn.disabled = true;
 
   const lv   = levels[selLevel];
-  const unit = unitPool[Math.floor(Math.random() * unitPool.length)];
   const isOther = selTile.dataset.other === 'true';
   const desc = isOther
     ? document.getElementById('f-desc-req').value.trim()
     : document.getElementById('f-desc-opt').value.trim();
+
+  // Parse GPS coordinates from location field for dispatch
+  const locStr = document.getElementById('f-loc').value.trim();
+  const gpsMatch = locStr.match(/GPS:\s*([\d.-]+)\s*,\s*([\d.-]+)/);
+  let dispatchLat = null, dispatchLon = null;
+  if (gpsMatch) {
+    dispatchLat = parseFloat(gpsMatch[1]);
+    dispatchLon = parseFloat(gpsMatch[2]);
+  }
+
+  // Map severity level 1-7 to dispatch categories
+  const sevMap = { 1:'MILD', 2:'MILD', 3:'MODERATE', 4:'MODERATE', 5:'URGENT', 6:'CRITICAL', 7:'CRITICAL' };
+  const dispatchSeverity = sevMap[selLevel] || 'MODERATE';
+
+  // Run real dispatch if we have GPS coordinates
+  let dispatchData = null;
+  if (dispatchLat && dispatchLon) {
+    try {
+      const dRes = await fetch('/api/map/dispatch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: dispatchLat, lon: dispatchLon, severity: dispatchSeverity }),
+      });
+      if (dRes.ok) dispatchData = await dRes.json();
+    } catch { /* dispatch is best-effort, booking still proceeds */ }
+  }
+
+  // Use real dispatch data for unit/ETA if available, else fallback
+  const unit = dispatchData ? dispatchData.ambulance.id : unitPool[Math.floor(Math.random() * unitPool.length)];
+  const etaMin = dispatchData ? dispatchData.eta_to_patient : lv.eta;
 
   try {
     const res = await fetch('/api/bookings', {
@@ -810,13 +963,13 @@ async function submitBooking() {
       body: JSON.stringify({
         patient_name:  document.getElementById('f-name').value.trim(),
         patient_phone: document.getElementById('f-phone').value.trim(),
-        location:      document.getElementById('f-loc').value.trim(),
+        location:      locStr,
         emergency_type: selTile.dataset.type,
         ambulance_type: selTile.dataset.amb,
         severity_level: selLevel,
         severity_word:  lv.word,
         description:    desc || null,
-        eta_minutes:    lv.eta,
+        eta_minutes:    Math.round(etaMin),
         unit_assigned:  unit,
       }),
     });
@@ -828,14 +981,14 @@ async function submitBooking() {
 
     // Populate confirmation screen
     document.getElementById('req-id').textContent      = data.request_id;
-    document.getElementById('eta-val').textContent     = lv.eta + ' min';
+    document.getElementById('eta-val').textContent     = Math.round(etaMin) + ' min';
     document.getElementById('eta-unit').textContent    = `${selTile.dataset.amb} · Unit ${unit}`;
     document.getElementById('tl-assigned').textContent = `${selTile.dataset.amb} (${unit}) assigned.`;
-    document.getElementById('tl-eta-txt').textContent  = lv.eta + ' min';
+    document.getElementById('tl-eta-txt').textContent  = Math.round(etaMin) + ' min';
 
     if (selLevel >= 6) {
       document.getElementById('advice-list').innerHTML = `
-        <li>If not breathing, begin CPR now. Call 112 for live guidance.</li>
+        <li>If not breathing, begin CPR now. Call 108 for live guidance.</li>
         <li>Don't leave the patient. Keep them talking if possible.</li>
         <li>Unlock the front door and stand outside to flag the ambulance.</li>
         <li>Do NOT give food, water or any medication.</li>
@@ -845,8 +998,13 @@ async function submitBooking() {
 
     document.getElementById('prog-wrap').style.display = 'none';
     showScreen(4);
-    startCountdown(lv.eta);
-    setTimeout(markArrived, lv.eta * 60 * 1000);
+    startCountdown(Math.round(etaMin));
+    setTimeout(markArrived, Math.round(etaMin) * 60 * 1000);
+
+    // Show live map with route if dispatch succeeded
+    if (dispatchData) {
+      setTimeout(() => renderDispatchMap(dispatchData), 200);
+    }
   } catch {
     alert('Network error. Please try again.');
   } finally {
@@ -886,6 +1044,8 @@ function resetBooking() {
   document.querySelectorAll('.type-tile').forEach(t => t.classList.remove('sel'));
   document.querySelectorAll('.lvl-btn').forEach(b => b.classList.remove('sel'));
   document.getElementById('f-loc').value = '';
+  document.getElementById('f-loc-search').value = '';
+  if (locPickerMarker && locPickerMap) { locPickerMap.removeLayer(locPickerMarker); locPickerMarker = null; }
   document.getElementById('f-desc-req').value = '';
   document.getElementById('f-desc-opt').value = '';
   document.getElementById('amb-info').classList.remove('show');
@@ -893,8 +1053,150 @@ function resetBooking() {
   document.getElementById('desc-required').classList.remove('show');
   document.getElementById('desc-optional').classList.remove('show');
   document.getElementById('prog-wrap').style.display = '';
+  document.getElementById('map-result-container').innerHTML = '';
+  // Destroy map so it gets recreated fresh next time
+  if (dispatchMap) { dispatchMap.remove(); dispatchMap = null; }
   prefillBookingForm();
   toS1();
+}
+
+function pickSearchResult(lat, lon, name) {
+  if (!locPickerMap) return;
+
+  // Move map to the location
+  locPickerMap.setView([lat, lon], 17);
+
+  // Place marker
+  if (locPickerMarker) locPickerMap.removeLayer(locPickerMarker);
+  const mIcon = L.divIcon({
+    className: '',
+    html: '<div class="pulse-marker"></div>',
+    iconSize: [18, 18], iconAnchor: [9, 9],
+  });
+  locPickerMarker = L.marker([lat, lon], { icon: mIcon }).addTo(locPickerMap);
+
+  // Fill location fields
+  document.getElementById('f-loc').value = `GPS: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+  document.getElementById('f-loc-search').value = name;
+  document.getElementById('loc-suggestions').style.display = 'none';
+  document.getElementById('e-loc').classList.remove('show');
+  document.getElementById('f-loc').classList.remove('err');
+}
+
+// ── Live Dispatch Map ────────────────────────────────────────────────────────
+let dispatchMap = null;
+
+function roadStyle(feature) {
+  const hw = feature.properties.highway || '';
+  const styles = {
+    trunk:          { color: '#c0392b', weight: 4, opacity: 0.8 },
+    trunk_link:     { color: '#c0392b', weight: 2.5, opacity: 0.7 },
+    primary:        { color: '#e67e22', weight: 3.5, opacity: 0.8 },
+    primary_link:   { color: '#e67e22', weight: 2, opacity: 0.7 },
+    secondary:      { color: '#f39c12', weight: 3, opacity: 0.8 },
+    secondary_link: { color: '#f39c12', weight: 2, opacity: 0.7 },
+    tertiary:       { color: '#27ae60', weight: 2.5, opacity: 0.7 },
+    tertiary_link:  { color: '#27ae60', weight: 1.5, opacity: 0.6 },
+  };
+  return styles[hw] || { color: '#95a5a6', weight: 1.5, opacity: 0.5 };
+}
+
+async function renderDispatchMap(data) {
+  const mapEl = document.getElementById('dispatch-map');
+  if (!mapEl) return;
+
+  // Destroy previous map instance if any
+  if (dispatchMap) { dispatchMap.remove(); dispatchMap = null; }
+
+  // Create map centred on patient
+  dispatchMap = L.map('dispatch-map', { zoomControl: true })
+    .setView([data.patient_node.lat, data.patient_node.lon], 14);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors', maxZoom: 19,
+  }).addTo(dispatchMap);
+
+  // Load road network
+  try {
+    const roadsRes = await fetch('/api/map/roads');
+    const roadsGeo = await roadsRes.json();
+    L.geoJSON(roadsGeo, {
+      style: roadStyle,
+      onEachFeature: (f, layer) => {
+        if (f.properties.name) layer.bindTooltip(f.properties.name, { sticky: true, opacity: .85 });
+      }
+    }).addTo(dispatchMap);
+  } catch { /* road layer is nice-to-have */ }
+
+  // Load hospital markers
+  try {
+    const cfgRes = await fetch('/api/map/config');
+    const cfg = await cfgRes.json();
+    for (const [id, h] of Object.entries(cfg.hospitals)) {
+      const icon = L.divIcon({
+        className: '',
+        html: '<div style="font-size:24px; filter:drop-shadow(0 1px 3px rgba(0,0,0,.3));">🏥</div>',
+        iconSize: [28, 28], iconAnchor: [14, 14],
+      });
+      L.marker([h.lat, h.lon], { icon }).addTo(dispatchMap)
+        .bindTooltip(h.name, { permanent: true, direction: 'top', offset: [0, -12] });
+    }
+  } catch {}
+
+  // Patient marker (pulsing red dot)
+  const patientIcon = L.divIcon({
+    className: '',
+    html: '<div class="pulse-marker"></div>',
+    iconSize: [18, 18], iconAnchor: [9, 9],
+  });
+  L.marker([data.patient_node.lat, data.patient_node.lon], { icon: patientIcon })
+    .addTo(dispatchMap).bindTooltip('You', { permanent: true, direction: 'top', offset: [0, -10] });
+
+  // Ambulance marker
+  const ambIcon = L.divIcon({
+    className: '',
+    html: '<div class="amb-icon-marker">🚑</div>',
+    iconSize: [26, 26], iconAnchor: [13, 13],
+  });
+  L.marker([data.ambulance.lat, data.ambulance.lon], { icon: ambIcon })
+    .addTo(dispatchMap).bindTooltip(data.ambulance.id, { direction: 'top', offset: [0, -10] });
+
+  // Route: ambulance → patient (blue dashed)
+  if (data.route_to_patient && data.route_to_patient.length > 1) {
+    L.polyline(data.route_to_patient, {
+      color: '#0066cc', weight: 5, opacity: 0.8, dashArray: '10, 8',
+    }).addTo(dispatchMap);
+  }
+
+  // Route: patient → hospital (green solid)
+  if (data.route_to_hospital && data.route_to_hospital.length > 1) {
+    L.polyline(data.route_to_hospital, {
+      color: '#00b894', weight: 5, opacity: 0.8,
+    }).addTo(dispatchMap);
+  }
+
+  // Fit map to show full route
+  const allCoords = [...(data.route_to_patient || []), ...(data.route_to_hospital || [])];
+  if (allCoords.length > 1) {
+    dispatchMap.fitBounds(L.latLngBounds(allCoords.map(c => [c[0], c[1]])).pad(0.15));
+  }
+
+  // Render result card below map
+  let html = '<div class="map-result"><h4>Dispatch Route</h4>';
+  html += mrRow('Ambulance', data.ambulance.id);
+  html += mrRow('ETA to You', data.eta_to_patient + ' min');
+  if (data.hospital) {
+    html += mrRow('Hospital', data.hospital.name);
+    html += mrRow('Total Trip', data.eta_total + ' min');
+    html += mrRow('Beds Available', data.hospital.beds_available);
+  }
+  if (data.doctor) html += mrRow('Doctor', data.doctor.split(' - ')[0]);
+  html += '</div>';
+  document.getElementById('map-result-container').innerHTML = html;
+}
+
+function mrRow(label, value) {
+  return '<div class="map-result-row"><span class="mr-label">' + escHtml(label) + '</span><span class="mr-value">' + escHtml(String(value)) + '</span></div>';
 }
 
 // ── History ───────────────────────────────────────────────────────────────────
